@@ -1,0 +1,16 @@
+# Banco
+*.db
+
+# Excel
+*.xlsx
+
+# Dados
+dados/
+
+# Python
+__pycache__/
+*.pyc
+
+# Ambiente
+.env
+venv/
