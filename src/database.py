@@ -60,6 +60,22 @@ def atualizar_status(codigo_pagamento, status):
     conn.close()
 
 
+def buscar_cpf_por_codigo(codigo_pagamento):
+    conn = conectar()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT cpf FROM pagamentos
+        WHERE codigo_pagamento = ?
+        LIMIT 1
+    """, (codigo_pagamento,))
+
+    resultado = cursor.fetchone()
+    conn.close()
+
+    return resultado[0] if resultado else None
+
+
 def arquivo_ja_processado(nome_arquivo):
     conn = conectar()
     cursor = conn.cursor()

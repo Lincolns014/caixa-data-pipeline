@@ -6,7 +6,8 @@ from src.database import (
     atualizar_status,
     inserir_pagamento,
     arquivo_ja_processado,
-    salvar_arquivo_processado
+    salvar_arquivo_processado,
+    buscar_cpf_por_codigo
 )
 
 from src.config import CAMINHO_DADOS, BASE_DIR
@@ -31,7 +32,8 @@ def processar_retorno():
     }
 
     mapa_rejeicao_codigo = {
-        "30": "ENCERRAMENTO_CALENDARIO"
+        "30": "ENCERRAMENTO_CALENDARIO",
+        "40": "CPF_INVALIDO"
     }
 
     def classificar_rejeicao(codigo, descricao):
@@ -61,8 +63,7 @@ def processar_retorno():
         return f"STATUS_NAO_MAPEADO_{codigo}"
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    nome_saida = f"ANALISE_CAIXA_{timestamp}.xlsx"
-    caminho_excel = os.path.join(BASE_DIR, nome_saida)
+    caminho_excel = os.path.join(BASE_DIR, f"ANALISE_CAIXA_{timestamp}.xlsx")
 
     with pd.ExcelWriter(caminho_excel, engine="openpyxl") as writer:
 
@@ -83,7 +84,7 @@ def processar_retorno():
                     print(f"⏭️ Ignorado: {arquivo}")
                     continue
 
-                print(f"📄 Processando: {caminho}")
+                print(f"📄 Processando: {arquivo}")
 
                 dados = []
 
@@ -91,46 +92,51 @@ def processar_retorno():
                     with open(caminho, "r", encoding="latin-1") as f:
                         linhas = f.readlines()
                 except Exception as e:
-                    print("❌ Erro ao ler arquivo:", e)
+                    print("Erro leitura:", e)
                     continue
 
                 nome_upper = arquivo.upper()
 
+                # ================= CNT =================
                 if nome_upper.startswith("CNT"):
 
                     for linha in linhas:
                         if linha.startswith("2"):
                             try:
                                 cpf = linha[2:13].strip()
-                                codigo_pagamento = linha[27:45].strip()
+                                codigo = linha[27:45].strip()
                                 parcela = linha[79:81].strip()
                                 valor = int(linha[45:57]) / 100
-                                competencia = linha[57:63].strip()
+                                comp = linha[57:63].strip()
 
-                                inserir_pagamento(cpf, codigo_pagamento, parcela, valor, competencia)
+                                inserir_pagamento(cpf, codigo, parcela, valor, comp)
 
                                 dados.append({
                                     "CPF": cpf,
-                                    "Código": codigo_pagamento,
+                                    "Código": codigo,
                                     "Valor": valor
                                 })
 
                             except:
                                 pass
 
+                # ================= I02 =================
                 elif "I02" in nome_upper:
 
                     for linha in linhas:
                         if linha.startswith("2"):
                             try:
-                                codigo = linha[44:46].strip()
-                                descricao = linha[46:96].strip()
                                 codigo_pagamento = linha[26:44].strip()
+                                codigo = linha[44:46].strip()
+                                desc = linha[46:96].strip()
 
-                                status = classificar_rejeicao(codigo, descricao)
+                                status = classificar_rejeicao(codigo, desc)
                                 atualizar_status(codigo_pagamento, status)
 
+                                cpf = buscar_cpf_por_codigo(codigo_pagamento)
+
                                 dados.append({
+                                    "CPF": cpf,
                                     "Código": codigo_pagamento,
                                     "Status": status
                                 })
@@ -138,18 +144,22 @@ def processar_retorno():
                             except:
                                 pass
 
+                # ================= I03 =================
                 elif "I03" in nome_upper:
 
                     for linha in linhas:
                         if linha.startswith("2"):
                             try:
-                                status_codigo = linha[83:85].strip()
                                 codigo_pagamento = linha[15:33].strip()
+                                status_cod = linha[83:85].strip()
 
-                                status = classificar_status(status_codigo)
+                                status = classificar_status(status_cod)
                                 atualizar_status(codigo_pagamento, status)
 
+                                cpf = buscar_cpf_por_codigo(codigo_pagamento)
+
                                 dados.append({
+                                    "CPF": cpf,
                                     "Código": codigo_pagamento,
                                     "Status": status
                                 })
@@ -157,17 +167,14 @@ def processar_retorno():
                             except:
                                 pass
 
+                # ================= SALVAR =================
                 if dados:
                     houve_dados = True
-                    df = pd.DataFrame(dados)
-                    df.to_excel(writer, sheet_name=arquivo[:25], index=False)
+                    pd.DataFrame(dados).to_excel(writer, sheet_name=arquivo[:25], index=False)
 
-                try:
-                    salvar_arquivo_processado(nome_arquivo)
-                except Exception as e:
-                    print("Erro ao salvar controle:", e)
+                salvar_arquivo_processado(nome_arquivo)
 
         if not houve_dados:
-            pd.DataFrame({"Aviso": ["Nenhum dado"]}).to_excel(writer, sheet_name="SEM_DADOS", index=False)
+            pd.DataFrame({"Aviso": ["Nenhum dado"]}).to_excel(writer, sheet_name="SEM_DADOS")
 
     print("\n✅ Processamento finalizado!")
